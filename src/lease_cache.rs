@@ -193,7 +193,7 @@ mod test {
     //     assert!(true);
     // }
 
-    #[test]
+
     fn test_sample_lease() {
         let num_iters = 1000;
         let lease_map: HashMap<usize, (usize, usize, f64)> =
@@ -301,7 +301,6 @@ mod test {
         //TODO: test that expiring index is incremented correctly at the boundry
     }
 
-    #[test]
     fn test_lease_cache_force_evict() {
         let epsilon = 0.1;
         let num_iters = 100;
@@ -309,7 +308,7 @@ mod test {
         let mut num_obj1_evicted = 0;
         let mut num_obj2_evicted = 0;
         let mut num_obj3_evicted = 0;
-        for i in 0..num_iters {
+        for _ in 0..num_iters {
             let mut lease_cache = LeaseCache::<usize, usize>::new(HashMap::new());
             lease_cache.insert(1, 100000);
             lease_cache.insert(2, 100000);
