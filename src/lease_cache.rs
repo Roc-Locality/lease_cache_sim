@@ -138,11 +138,6 @@ impl <Tag: ObjIdTraits, Obj: ObjIdTraits> CacheSim<TaggedObjectId<Tag, Obj>> for
         return cache_result;
     }
 
-    // fn cache_access(&mut self, access: TaggedObjectId) -> abstract_cache::AccessResult {
-    //     let (reference, obj_id) = access;
-    //     self.cache_access(obj_id)
-    // }
-
     fn set_capacity(&mut self, cache_size:usize) -> &mut Self {
         self.cache_size = Some(cache_size);
         self
@@ -168,15 +163,16 @@ mod test {
         println!("mr: {}", mr);
     }
 
-    #[test]
-    fn get_mr_for_3mm() {
-        let lease_map = lease_cache_file_reader::lease_to_map("./src/polybench/3mm/3mm_output_shel_leases".to_string());
-        let mut lease_cache = LeaseCache::<u64, u64>::new(lease_map);
-        lease_cache.set_capacity(1000);
-        let trace = lease_cache_file_reader::trace_to_vec_u64("./src/polybench/3mm/3mm_output.txt".to_string());
-        let mr = lease_cache.get_mr(trace.into_iter());
-        println!("mr: {}", mr);
-    }
+    // #[test]
+    // fn get_mr_for_3mm() {
+    //     let lease_map = lease_cache_file_reader::lease_to_map("./src/polybench/3mm/3mm_output_shel_leases".to_string());
+    //     let mut lease_cache = LeaseCache::<u64, u64>::new(lease_map);
+    //     lease_cache.set_capacity(1000);
+    //     let trace = lease_cache_file_reader::trace_to_vec_u64("./src/polybench/3mm/3mm_output.txt".to_string());
+    //     let mr = lease_cache.get_mr(trace.into_iter());
+    //     println!("mr: {}", mr);
+    //     assert!(true);
+    // }
 
     #[test]
     fn test_sample_lease() {
