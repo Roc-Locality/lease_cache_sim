@@ -1,49 +1,78 @@
 use std::collections::HashSet;
 use std::collections::HashMap;
-// use hashbrown::HashMap;
-use super::ObjIdTraits;
+use abstract_cache::ObjIdTraits;
+use abstract_cache::CacheSim;
+use std::hash::Hash;
+use std::fmt::{Debug, Display};
+use abstract_cache::AccessResult;
 use rand::seq::IteratorRandom;
+use rand;
+use rand::Rng;
+
+// type ObjId = usize;
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct TaggedObjectId <Tag: ObjIdTraits, Obj: ObjIdTraits> (pub Tag, pub Obj);
+impl <Tag: ObjIdTraits, Obj: ObjIdTraits> Display for TaggedObjectId<Tag, Obj> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
+
+impl <Tag: ObjIdTraits, Obj: ObjIdTraits> ObjIdTraits for TaggedObjectId<Tag, Obj> {}
 
 
 pub const MAX_EXPIRING_VEC_SIZE : usize = 10000000;
 #[derive(Clone)]
-pub struct LeaseCache <ObjId:ObjIdTraits> {
-    pub(crate) expiring_vec : Vec<HashSet<ObjId>>,
+pub struct LeaseCache<Tag: ObjIdTraits, Obj: ObjIdTraits> {
+    //map from ref to (short_lease, long_lease, short_lease_prob)
+    pub(crate) lease_table : HashMap<Tag, (usize, usize, f64)>,
+    pub(crate) expiring_vec : Vec<HashSet<Obj>>,
     pub(crate) curr_expiring_index : usize,
     //map from ObjId to index in expiring_vec 
-    pub(crate) content_map : HashMap<ObjId, usize>,
+    pub(crate) content_map : HashMap<Obj, usize>,
+    pub(crate) cache_consumption : usize,
+    pub(crate) cache_size : Option<usize>,
 }
-impl <ObjId:ObjIdTraits> LeaseCache <ObjId> {
-    pub fn new() -> Self {
+impl <Tag: ObjIdTraits, Obj: ObjIdTraits> LeaseCache<Tag, Obj> {
+    pub fn new(lease_table: HashMap<Tag, (usize, usize, f64)>) -> Self {
         LeaseCache {
+            lease_table,
             expiring_vec : vec![HashSet::new(); MAX_EXPIRING_VEC_SIZE],
             curr_expiring_index : 0,
             content_map : HashMap::new(),
+            cache_consumption : 0,
+            cache_size : None,
         }
     }
 
-    pub fn insert(&mut self, obj_id: ObjId, lease: usize) {
+    pub fn insert(&mut self, obj_id: Obj, lease: usize) {
         let absolute_index = (self.curr_expiring_index + lease) % MAX_EXPIRING_VEC_SIZE;
         self.expiring_vec[absolute_index].insert(obj_id.clone());
         self.content_map.insert(obj_id, absolute_index);
     }
 
-    pub fn update(&mut self, obj_id: &ObjId, lease: usize) {
+    pub fn update(&mut self, obj_id: &Obj, lease: usize) -> AccessResult {
         let old_index = self.content_map.get(obj_id);
         match old_index {
-            None => self.insert(obj_id.clone(), lease),
+            None => {
+                self.insert(obj_id.clone(), lease);
+                AccessResult::Miss
+            }
             Some(old_index) => {
-                self.expiring_vec[*old_index].remove(obj_id);
-                self.insert(obj_id.clone(), lease)
+                self.expiring_vec[*old_index].remove(obj_id).then_some(()).unwrap();
+                self.insert(obj_id.clone(), lease);
+                AccessResult::Hit
+
             }
         }
     }
 
-    pub fn contains(&self, obj_id: &ObjId) -> bool {
+    pub fn contains(&self, obj_id: &Obj) -> bool {
         self.content_map.contains_key(obj_id)
     }
 
-    pub fn get_time_till_eviction(&self, obj_id: &ObjId) -> usize {
+    pub fn get_time_till_eviction(&self, obj_id: &Obj) -> usize {
         let index = self.content_map.get(obj_id).unwrap();
         let curr_index = self.curr_expiring_index;
         if *index > curr_index {
@@ -52,13 +81,13 @@ impl <ObjId:ObjIdTraits> LeaseCache <ObjId> {
         return MAX_EXPIRING_VEC_SIZE - curr_index + *index;
     }
 
-    pub fn remove_from_cache(&mut self, obj_id: &ObjId) {
+    pub fn remove_from_cache(&mut self, obj_id: &Obj) {
         let index = self.content_map.get(obj_id).unwrap();
         self.expiring_vec[*index].remove(obj_id);
         self.content_map.remove(obj_id);
     }
 
-    pub fn dump_expiring(&mut self) -> HashSet<ObjId> {
+    pub fn dump_expiring(&mut self) -> HashSet<Obj> {
         let mut expiring = self.expiring_vec[self.curr_expiring_index].clone();
         let expiring_copy = expiring.clone();
         expiring.clear();
@@ -66,7 +95,7 @@ impl <ObjId:ObjIdTraits> LeaseCache <ObjId> {
         return expiring_copy
     }
 
-    fn remove_random_element<K, V>(map: &mut HashMap<K, V>) -> Option<(K, V)>
+    pub fn remove_random_element<K, V>(map: &mut HashMap<K, V>) -> Option<(K, V)>
     where
         K: std::hash::Hash + Eq + Clone,
         V: Clone,
@@ -78,31 +107,108 @@ impl <ObjId:ObjIdTraits> LeaseCache <ObjId> {
     None
     }
 
-    pub fn force_evict(&mut self) -> ObjId{
+    pub fn force_evict(&mut self) -> Obj{
         // println!("content map before {:?}", self.content_map);
 
-        let (obj_id, absolute_index) = LeaseCache::<ObjId>::remove_random_element(&mut self.content_map).unwrap();
+        let (obj_id, absolute_index) = LeaseCache::<Tag, Obj>::remove_random_element(&mut self.content_map).unwrap();
 
         self.expiring_vec[absolute_index].remove(&obj_id.clone()).then_some(()).unwrap();
         obj_id
     }
+
+    pub fn sample_lease(&mut self, reference: Tag) -> usize {
+        let (short_lease, long_lease, short_lease_prob) = *self.lease_table.get(&reference).unwrap();
+        let mut rng = rand::thread_rng();
+        let rand_num: f64 = rng.gen();
+        let lease = if rand_num < short_lease_prob { short_lease } else { long_lease };
+        return lease;
+    }
 }
+
+impl <Tag: ObjIdTraits, Obj: ObjIdTraits> CacheSim<TaggedObjectId<Tag, Obj>> for LeaseCache<Tag, Obj> {
+    /// returns (total_access_count, miss_count) 
+    fn cache_access(&mut self, access: TaggedObjectId<Tag, Obj>) -> abstract_cache::AccessResult {
+        let TaggedObjectId(reference, obj_id) = access;
+        let lease = self.sample_lease(reference);
+        let cache_result = self.update(&obj_id, lease);
+        self.dump_expiring();
+        if self.cache_consumption > self.cache_size.unwrap() {
+            self.force_evict();
+        }
+        return cache_result;
+    }
+
+    // fn cache_access(&mut self, access: TaggedObjectId) -> abstract_cache::AccessResult {
+    //     let (reference, obj_id) = access;
+    //     self.cache_access(obj_id)
+    // }
+
+    fn set_capacity(&mut self, cache_size:usize) -> &mut Self {
+        self.cache_size = Some(cache_size);
+        self
+    }
+}
+
 
 #[cfg(test)]
 
 mod test {
+    use std::hash::Hash;
+    use crate::{lease_cache, lease_cache_file_reader};
+
     use super::*;
+
+    #[test]
+    fn test_lease_cache_tag_id() {
+        let tag_id_iter = vec![TaggedObjectId(1, 2), TaggedObjectId(3, 4), TaggedObjectId(1, 2)].into_iter();
+        let lease_map: HashMap<u64, (usize, usize, f64)> = vec![(1, (2, 0, 1.0)), (3, (1, 0, 1.0))].into_iter().collect();
+        let mut lease_cache = LeaseCache::<u64, u64>::new(lease_map);
+        lease_cache.set_capacity(1000);
+        let mr = lease_cache.get_mr(tag_id_iter);
+        println!("mr: {}", mr);
+    }
+
+    #[test]
+    fn get_mr_for_3mm() {
+        let lease_map = lease_cache_file_reader::lease_to_map("./src/polybench/3mm/3mm_output_shel_leases".to_string());
+        let mut lease_cache = LeaseCache::<u64, u64>::new(lease_map);
+        lease_cache.set_capacity(1000);
+        let trace = lease_cache_file_reader::trace_to_vec_u64("./src/polybench/3mm/3mm_output.txt".to_string());
+        let mr = lease_cache.get_mr(trace.into_iter());
+        println!("mr: {}", mr);
+    }
+
+    #[test]
+    fn test_sample_lease() {
+        let num_iters = 1000;
+        let lease_map: HashMap<usize, (usize, usize, f64)> = vec![(0, (0, 1, 0.5))].into_iter().collect();
+        let mut num_short_lease = 0;
+        let mut num_long_lease = 0;
+        let mut lease_cache = LeaseCache::<usize, usize>::new(lease_map);
+        (0..num_iters).for_each(|_| {
+            let lease = lease_cache.sample_lease(0);
+            match lease {
+                0 => num_short_lease += 1,
+                1 => num_long_lease += 1,
+                _ => panic!("Invalid lease")
+            }
+        });
+        assert!((num_short_lease as f64 / num_iters as f64 - num_long_lease as f64 / num_iters as f64) < 0.02);
+        println!("short_lease_prob: {} long_lease_prob: {}, ", num_short_lease as f64 / num_iters as f64, num_long_lease as f64 / num_iters as f64);
+
+
+    }
     #[test]
     fn test_lease_cache_new() {
-        let lease_cache = LeaseCache::<usize>::new();
-        assert_eq!(lease_cache.expiring_vec.len(), crate::simulator::lease_cache::MAX_EXPIRING_VEC_SIZE);
+        let lease_cache = LeaseCache::<usize, usize>::new(HashMap::new());
+        assert_eq!(lease_cache.expiring_vec.len(), self::MAX_EXPIRING_VEC_SIZE);
         assert_eq!(lease_cache.curr_expiring_index, 0);
         assert_eq!(lease_cache.content_map.len(), 0);
     }
 
     #[test]
     fn test_lease_cache_insert() {
-        let mut lease_cache = LeaseCache::new();
+        let mut lease_cache = LeaseCache::<usize, usize>::new(HashMap::new());
         lease_cache.insert(1, 1);
         lease_cache.insert(2, 2);
         lease_cache.insert(3, 3);
@@ -132,7 +238,7 @@ mod test {
 
     #[test]
     fn test_lease_cache_update() {
-        let mut lease_cache = LeaseCache::new();
+        let mut lease_cache = LeaseCache::<usize, usize>::new(HashMap::new());
         // Update the lease cache with obj_id 1 and index 1
         lease_cache.update(&1, 1);
         // Get the absolute index of obj_id 1 and release the immutable borrow
@@ -150,7 +256,7 @@ mod test {
 
     #[test]
     fn test_lease_cache_dump_expiring() {
-        let mut lease_cache = LeaseCache::new();
+        let mut lease_cache = LeaseCache::<usize, usize>::new(HashMap::new());
         //test to make sure expiring objects are dumped correctly,
         //this means that each time we dump we see the objects that the correct
         //objects are expiring and the expiring index is incremented by one
@@ -184,7 +290,7 @@ mod test {
         let mut num_obj2_evicted = 0;
         let mut num_obj3_evicted = 0;
         for i in 0..num_iters {
-            let mut lease_cache = LeaseCache::new();
+            let mut lease_cache = LeaseCache::<usize, usize>::new(HashMap::new());
             lease_cache.insert(1, 100000);
             lease_cache.insert(2, 100000);
             lease_cache.insert(3, 9);
@@ -220,7 +326,7 @@ mod test {
         let obj_2 = "x2";
         let obj_3 = "x3";
         for i in 0..num_iters {
-            let mut lease_cache = LeaseCache::new();
+            let mut lease_cache = LeaseCache::<String, _>::new(HashMap::new());
             lease_cache.insert(obj_1.to_string(), 100000);
             lease_cache.insert(obj_2.to_string(), 100000);
             lease_cache.insert(obj_3.to_string(), 9);
