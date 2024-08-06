@@ -193,7 +193,6 @@ mod test {
     //     assert!(true);
     // }
 
-
     fn test_sample_lease() {
         let num_iters = 1000;
         let lease_map: HashMap<usize, (usize, usize, f64)> =
