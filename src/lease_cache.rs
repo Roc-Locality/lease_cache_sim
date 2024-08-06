@@ -1,48 +1,48 @@
-use std::collections::HashSet;
-use std::collections::HashMap;
-use abstract_cache::ObjIdTraits;
-use abstract_cache::CacheSim;
-use std::hash::Hash;
-use std::fmt::{Debug, Display};
+#![allow(dead_code)]
+#![allow(clippy::needless_return)]
 use abstract_cache::AccessResult;
+use abstract_cache::CacheSim;
+use abstract_cache::ObjIdTraits;
 use rand::seq::IteratorRandom;
-use rand;
 use rand::Rng;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 // type ObjId = usize;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct TaggedObjectId <Tag: ObjIdTraits, Obj: ObjIdTraits> (pub Tag, pub Obj);
-impl <Tag: ObjIdTraits, Obj: ObjIdTraits> Display for TaggedObjectId<Tag, Obj> {
+pub struct TaggedObjectId<Tag: ObjIdTraits, Obj: ObjIdTraits>(pub Tag, pub Obj);
+impl<Tag: ObjIdTraits, Obj: ObjIdTraits> Display for TaggedObjectId<Tag, Obj> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {})", self.0, self.1)
     }
 }
 
-impl <Tag: ObjIdTraits, Obj: ObjIdTraits> ObjIdTraits for TaggedObjectId<Tag, Obj> {}
+impl<Tag: ObjIdTraits, Obj: ObjIdTraits> ObjIdTraits for TaggedObjectId<Tag, Obj> {}
 
-
-pub const MAX_EXPIRING_VEC_SIZE : usize = 10000000;
+pub const MAX_EXPIRING_VEC_SIZE: usize = 10000000;
 #[derive(Clone)]
 pub struct LeaseCache<Tag: ObjIdTraits, Obj: ObjIdTraits> {
     //map from ref to (short_lease, long_lease, short_lease_prob)
-    pub(crate) lease_table : HashMap<Tag, (usize, usize, f64)>,
-    pub(crate) expiring_vec : Vec<HashSet<Obj>>,
-    pub(crate) curr_expiring_index : usize,
-    //map from ObjId to index in expiring_vec 
-    pub(crate) content_map : HashMap<Obj, usize>,
-    pub(crate) cache_consumption : usize,
-    pub(crate) cache_size : Option<usize>,
+    pub(crate) lease_table: HashMap<Tag, (usize, usize, f64)>,
+    pub(crate) expiring_vec: Vec<HashSet<Obj>>,
+    pub(crate) curr_expiring_index: usize,
+    //map from ObjId to index in expiring_vec
+    pub(crate) content_map: HashMap<Obj, usize>,
+    pub(crate) cache_consumption: usize,
+    pub(crate) cache_size: Option<usize>,
 }
-impl <Tag: ObjIdTraits, Obj: ObjIdTraits> LeaseCache<Tag, Obj> {
+impl<Tag: ObjIdTraits, Obj: ObjIdTraits> LeaseCache<Tag, Obj> {
     pub fn new(lease_table: HashMap<Tag, (usize, usize, f64)>) -> Self {
         LeaseCache {
             lease_table,
-            expiring_vec : vec![HashSet::new(); MAX_EXPIRING_VEC_SIZE],
-            curr_expiring_index : 0,
-            content_map : HashMap::new(),
-            cache_consumption : 0,
-            cache_size : None,
+            expiring_vec: vec![HashSet::new(); MAX_EXPIRING_VEC_SIZE],
+            curr_expiring_index: 0,
+            content_map: HashMap::new(),
+            cache_consumption: 0,
+            cache_size: None,
         }
     }
 
@@ -60,10 +60,12 @@ impl <Tag: ObjIdTraits, Obj: ObjIdTraits> LeaseCache<Tag, Obj> {
                 AccessResult::Miss
             }
             Some(old_index) => {
-                self.expiring_vec[*old_index].remove(obj_id).then_some(()).unwrap();
+                self.expiring_vec[*old_index]
+                    .remove(obj_id)
+                    .then_some(())
+                    .unwrap();
                 self.insert(obj_id.clone(), lease);
                 AccessResult::Hit
-
             }
         }
     }
@@ -92,7 +94,7 @@ impl <Tag: ObjIdTraits, Obj: ObjIdTraits> LeaseCache<Tag, Obj> {
         let expiring_copy = expiring.clone();
         expiring.clear();
         self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
-        return expiring_copy
+        return expiring_copy;
     }
 
     pub fn remove_random_element<K, V>(map: &mut HashMap<K, V>) -> Option<(K, V)>
@@ -104,29 +106,40 @@ impl <Tag: ObjIdTraits, Obj: ObjIdTraits> LeaseCache<Tag, Obj> {
             map.remove(key);
             return Some((key.clone(), val.clone()));
         }
-    None
+        None
     }
 
-    pub fn force_evict(&mut self) -> Obj{
+    pub fn force_evict(&mut self) -> Obj {
         // println!("content map before {:?}", self.content_map);
 
-        let (obj_id, absolute_index) = LeaseCache::<Tag, Obj>::remove_random_element(&mut self.content_map).unwrap();
+        let (obj_id, absolute_index) =
+            LeaseCache::<Tag, Obj>::remove_random_element(&mut self.content_map).unwrap();
 
-        self.expiring_vec[absolute_index].remove(&obj_id.clone()).then_some(()).unwrap();
+        self.expiring_vec[absolute_index]
+            .remove(&obj_id.clone())
+            .then_some(())
+            .unwrap();
         obj_id
     }
 
     pub fn sample_lease(&mut self, reference: Tag) -> usize {
-        let (short_lease, long_lease, short_lease_prob) = *self.lease_table.get(&reference).unwrap();
+        let (short_lease, long_lease, short_lease_prob) =
+            *self.lease_table.get(&reference).unwrap();
         let mut rng = rand::thread_rng();
         let rand_num: f64 = rng.gen();
-        let lease = if rand_num < short_lease_prob { short_lease } else { long_lease };
+        let lease = if rand_num < short_lease_prob {
+            short_lease
+        } else {
+            long_lease
+        };
         return lease;
     }
 }
 
-impl <Tag: ObjIdTraits, Obj: ObjIdTraits> CacheSim<TaggedObjectId<Tag, Obj>> for LeaseCache<Tag, Obj> {
-    /// returns (total_access_count, miss_count) 
+impl<Tag: ObjIdTraits, Obj: ObjIdTraits> CacheSim<TaggedObjectId<Tag, Obj>>
+    for LeaseCache<Tag, Obj>
+{
+    /// returns (total_access_count, miss_count)
     fn cache_access(&mut self, access: TaggedObjectId<Tag, Obj>) -> abstract_cache::AccessResult {
         let TaggedObjectId(reference, obj_id) = access;
         let lease = self.sample_lease(reference);
@@ -138,25 +151,31 @@ impl <Tag: ObjIdTraits, Obj: ObjIdTraits> CacheSim<TaggedObjectId<Tag, Obj>> for
         return cache_result;
     }
 
-    fn set_capacity(&mut self, cache_size:usize) -> &mut Self {
+    fn set_capacity(&mut self, cache_size: usize) -> &mut Self {
         self.cache_size = Some(cache_size);
         self
     }
 }
 
-
 #[cfg(test)]
 
 mod test {
-    use std::hash::Hash;
     use crate::{lease_cache, lease_cache_file_reader};
+    use std::hash::Hash;
 
     use super::*;
 
     #[test]
     fn test_lease_cache_tag_id() {
-        let tag_id_iter = vec![TaggedObjectId(1, 2), TaggedObjectId(3, 4), TaggedObjectId(1, 2)].into_iter();
-        let lease_map: HashMap<u64, (usize, usize, f64)> = vec![(1, (2, 0, 1.0)), (3, (1, 0, 1.0))].into_iter().collect();
+        let tag_id_iter = vec![
+            TaggedObjectId(1, 2),
+            TaggedObjectId(3, 4),
+            TaggedObjectId(1, 2),
+        ]
+        .into_iter();
+        let lease_map: HashMap<u64, (usize, usize, f64)> = vec![(1, (2, 0, 1.0)), (3, (1, 0, 1.0))]
+            .into_iter()
+            .collect();
         let mut lease_cache = LeaseCache::<u64, u64>::new(lease_map);
         lease_cache.set_capacity(1000);
         let mr = lease_cache.get_mr(tag_id_iter);
@@ -177,7 +196,8 @@ mod test {
     #[test]
     fn test_sample_lease() {
         let num_iters = 1000;
-        let lease_map: HashMap<usize, (usize, usize, f64)> = vec![(0, (0, 1, 0.5))].into_iter().collect();
+        let lease_map: HashMap<usize, (usize, usize, f64)> =
+            vec![(0, (0, 1, 0.5))].into_iter().collect();
         let mut num_short_lease = 0;
         let mut num_long_lease = 0;
         let mut lease_cache = LeaseCache::<usize, usize>::new(lease_map);
@@ -186,13 +206,18 @@ mod test {
             match lease {
                 0 => num_short_lease += 1,
                 1 => num_long_lease += 1,
-                _ => panic!("Invalid lease")
+                _ => panic!("Invalid lease"),
             }
         });
-        assert!((num_short_lease as f64 / num_iters as f64 - num_long_lease as f64 / num_iters as f64) < 0.02);
-        println!("short_lease_prob: {} long_lease_prob: {}, ", num_short_lease as f64 / num_iters as f64, num_long_lease as f64 / num_iters as f64);
-
-
+        assert!(
+            (num_short_lease as f64 / num_iters as f64 - num_long_lease as f64 / num_iters as f64)
+                < 0.02
+        );
+        println!(
+            "short_lease_prob: {} long_lease_prob: {}, ",
+            num_short_lease as f64 / num_iters as f64,
+            num_long_lease as f64 / num_iters as f64
+        );
     }
     #[test]
     fn test_lease_cache_new() {
@@ -229,7 +254,7 @@ mod test {
     //     assert!(!lease_cache.expiring_vec[*abs_index].contains(&1));
     //     let abs_index = lease_cache.content_map.get(&1).unwrap();
     //     assert!(lease_cache.expiring_vec[*abs_index].contains(&1));
-        
+
     // }
 
     #[test]
@@ -264,7 +289,7 @@ mod test {
         expiring = lease_cache.dump_expiring();
         let mut expected = HashSet::new();
         expected.insert(1);
-        assert_eq!(expiring, expected); 
+        assert_eq!(expiring, expected);
         expiring = lease_cache.dump_expiring();
         expected.insert(2);
         expected.remove(&1);
@@ -275,7 +300,6 @@ mod test {
         assert_eq!(expiring, expected);
         //TODO: test that expiring index is incremented correctly at the boundry
     }
-
 
     #[test]
     fn test_lease_cache_force_evict() {
@@ -295,18 +319,29 @@ mod test {
                 1 => num_obj1_evicted += 1,
                 2 => num_obj2_evicted += 1,
                 3 => num_obj3_evicted += 1,
-                _ => panic!("Invalid object evicted")
+                _ => panic!("Invalid object evicted"),
             }
             // if i % 10 == 1 {
             //     println!("{} ", i)
             // }
         }
         //check that each object was evicted is within a small epsilon
-        let check_obj1 = ((num_obj1_evicted as f64 / num_iters as f64) - (1.0/3.0)).abs() < epsilon;
-        let check_obj2 = ((num_obj2_evicted as f64 / num_iters as f64) - (1.0/3.0)).abs() < epsilon;
-        let check_obj3 = ((num_obj3_evicted as f64 / num_iters as f64) - (1.0/3.0)).abs() < epsilon;
-        println!("eviction count: {} {} {}", num_obj1_evicted, num_obj2_evicted, num_obj3_evicted);
-        println!("eviction ratio: {} {} {}", num_obj1_evicted as f64 /num_iters as f64, num_obj2_evicted as f64 / num_iters as f64, num_obj3_evicted as f64 / num_iters as f64);
+        let check_obj1 =
+            ((num_obj1_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        let check_obj2 =
+            ((num_obj2_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        let check_obj3 =
+            ((num_obj3_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        println!(
+            "eviction count: {} {} {}",
+            num_obj1_evicted, num_obj2_evicted, num_obj3_evicted
+        );
+        println!(
+            "eviction ratio: {} {} {}",
+            num_obj1_evicted as f64 / num_iters as f64,
+            num_obj2_evicted as f64 / num_iters as f64,
+            num_obj3_evicted as f64 / num_iters as f64
+        );
         assert!(check_obj1 && check_obj2 && check_obj3);
     }
 
@@ -332,18 +367,29 @@ mod test {
                 o if o == obj_1 => num_obj1_evicted += 1,
                 o if o == obj_2 => num_obj2_evicted += 1,
                 o if o == obj_3 => num_obj3_evicted += 1,
-                _ => panic!("Invalid object evicted")
+                _ => panic!("Invalid object evicted"),
             }
             // if i % 10 == 1 {
             //     println!("{} ", i)
             // }
         }
         //check that each object was evicted is within a small epsilon
-        let check_obj1 = ((num_obj1_evicted as f64 / num_iters as f64) - (1.0/3.0)).abs() < epsilon;
-        let check_obj2 = ((num_obj2_evicted as f64 / num_iters as f64) - (1.0/3.0)).abs() < epsilon;
-        let check_obj3 = ((num_obj3_evicted as f64 / num_iters as f64) - (1.0/3.0)).abs() < epsilon;
-        println!("eviction count: {} {} {}", num_obj1_evicted, num_obj2_evicted, num_obj3_evicted);
-        println!("eviction ratio: {} {} {}", num_obj1_evicted as f64 /num_iters as f64, num_obj2_evicted as f64 / num_iters as f64, num_obj3_evicted as f64 / num_iters as f64);
+        let check_obj1 =
+            ((num_obj1_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        let check_obj2 =
+            ((num_obj2_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        let check_obj3 =
+            ((num_obj3_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        println!(
+            "eviction count: {} {} {}",
+            num_obj1_evicted, num_obj2_evicted, num_obj3_evicted
+        );
+        println!(
+            "eviction ratio: {} {} {}",
+            num_obj1_evicted as f64 / num_iters as f64,
+            num_obj2_evicted as f64 / num_iters as f64,
+            num_obj3_evicted as f64 / num_iters as f64
+        );
         assert!(check_obj1 && check_obj2 && check_obj3);
     }
 }
