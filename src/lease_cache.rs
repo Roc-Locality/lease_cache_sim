@@ -160,7 +160,7 @@ impl<Tag: ObjIdTraits, Obj: ObjIdTraits> CacheSim<TaggedObjectId<Tag, Obj>>
 #[cfg(test)]
 
 mod test {
-    use crate::{lease_cache, lease_cache_file_reader};
+    use crate::lease_cache;
     use std::hash::Hash;
 
     use super::*;
