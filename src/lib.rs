@@ -79,6 +79,10 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         return MAX_EXPIRING_VEC_SIZE - curr_index + *index;
     }
 
+    pub fn get_cache_consumption(&self) -> usize {
+        self.cache_consumption
+    }
+
     pub fn remove_from_cache(&mut self, obj_id: &Obj) {
         let index = self.content_map.get(obj_id).unwrap();
         self.expiring_vec[*index].remove(obj_id);
