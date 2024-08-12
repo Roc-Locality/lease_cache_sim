@@ -137,7 +137,7 @@ impl<Obj: ObjIdTraits> CacheSim<TaggedObjectId<usize, Obj>> for LeaseCache<Obj> 
         let cache_result = self.update(&obj_id, lease);
         match cache_result {
             AccessResult::Hit => (),
-            AccessResult::Miss => self.cache_consumption += 1 ,
+            AccessResult::Miss => self.cache_consumption += 1,
         }
         self.dump_expiring();
         if self.cache_consumption > self.cache_size.unwrap() {
