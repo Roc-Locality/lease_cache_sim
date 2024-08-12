@@ -53,6 +53,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         match old_index {
             None => {
                 self.insert(obj_id.clone(), lease);
+                self.cache_consumption += 1;
                 AccessResult::Miss
             }
             Some(old_index) => {
@@ -135,10 +136,6 @@ impl<Obj: ObjIdTraits> CacheSim<TaggedObjectId<usize, Obj>> for LeaseCache<Obj> 
     fn cache_access(&mut self, access: TaggedObjectId<usize, Obj>) -> abstract_cache::AccessResult {
         let TaggedObjectId(lease, obj_id) = access;
         let cache_result = self.update(&obj_id, lease);
-        match cache_result {
-            AccessResult::Hit => (),
-            AccessResult::Miss => self.cache_consumption += 1,
-        }
         self.dump_expiring();
         if self.cache_consumption > self.cache_size.unwrap() {
             self.force_evict();
