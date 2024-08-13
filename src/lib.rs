@@ -98,6 +98,10 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     pub fn dump_expiring(&mut self) -> HashSet<Obj> {
         let mut expiring = self.expiring_vec[self.curr_expiring_index].clone();
         let expiring_copy = expiring.clone();
+        //decrement the cache consumption when expiring
+        println!("expiring: {:?}", expiring);
+        println!("expiring len {:?}", expiring.len());
+        self.cache_consumption -= expiring.len();
         expiring.clear();
         self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
         return expiring_copy;
@@ -211,6 +215,7 @@ mod test {
         lease_cache.insert(1, 1);
         lease_cache.insert(2, 2);
         lease_cache.insert(3, 3);
+        lease_cache.cache_consumption = 3;
         let mut expiring = lease_cache.dump_expiring();
         assert_eq!(expiring, HashSet::new());
         expiring = lease_cache.dump_expiring();
@@ -225,6 +230,8 @@ mod test {
         expected.insert(3);
         expected.remove(&2);
         assert_eq!(expiring, expected);
+        assert_eq!(lease_cache.cache_consumption, 0);
+        
         //TODO: test that expiring index is incremented correctly at the boundry
     }
 
