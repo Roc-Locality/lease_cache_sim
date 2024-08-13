@@ -50,7 +50,6 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
 
     pub fn update(&mut self, obj_id: &Obj, lease: usize) -> AccessResult {
         let old_index = self.content_map.get(obj_id);
-        println!("accessing obj_id: {obj_id} with lease: {lease}");
         match old_index {
             None => {
                 self.insert(obj_id.clone(), lease);
