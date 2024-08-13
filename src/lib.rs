@@ -71,13 +71,18 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         self.content_map.contains_key(obj_id)
     }
 
-    pub fn get_time_till_eviction(&self, obj_id: &Obj) -> usize {
-        let index = self.content_map.get(obj_id).unwrap();
-        let curr_index = self.curr_expiring_index;
-        if *index > curr_index {
-            return *index - curr_index;
+    pub fn get_time_till_eviction(&self, obj_id: &Obj) -> Option<usize> {
+        let index = self.content_map.get(obj_id);
+        match index {
+            None => None,
+            Some(index) => {
+                let curr_index = self.curr_expiring_index;
+                if *index > curr_index {
+                    return Some(*index - curr_index);
+                }
+                return Some(MAX_EXPIRING_VEC_SIZE - curr_index + *index);
+            }
         }
-        return MAX_EXPIRING_VEC_SIZE - curr_index + *index;
     }
 
     pub fn get_cache_consumption(&self) -> usize {
