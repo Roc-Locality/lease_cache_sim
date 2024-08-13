@@ -99,8 +99,6 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         let mut expiring = self.expiring_vec[self.curr_expiring_index].clone();
         let expiring_copy = expiring.clone();
         //decrement the cache consumption when expiring
-        println!("expiring: {:?}", expiring);
-        println!("expiring len {:?}", expiring.len());
         self.cache_consumption -= expiring.len();
         expiring.clear();
         self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
