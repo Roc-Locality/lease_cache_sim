@@ -231,7 +231,7 @@ mod test {
         expected.remove(&2);
         assert_eq!(expiring, expected);
         assert_eq!(lease_cache.cache_consumption, 0);
-        
+
         //TODO: test that expiring index is incremented correctly at the boundry
     }
 
