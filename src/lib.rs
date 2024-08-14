@@ -43,9 +43,6 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     }
 
     pub fn insert(&mut self, obj_id: Obj, lease: usize) {
-        if lease == 0 {
-            return;
-        }
         let absolute_index = (self.curr_expiring_index + lease) % MAX_EXPIRING_VEC_SIZE;
         self.expiring_vec[absolute_index].insert(obj_id.clone());
         self.content_map.insert(obj_id, absolute_index);
@@ -56,16 +53,24 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         let old_index = self.content_map.get(obj_id);
         match old_index {
             None => {
-                self.insert(obj_id.clone(), lease);
-                self.cache_consumption += 1;
-                AccessResult::Miss
+                match lease {
+                    0 => AccessResult::Miss,
+                    _ => {
+                        self.insert(obj_id.clone(), lease);
+                        self.cache_consumption += 1;
+                        AccessResult::Miss
+                    }
+                    
+                }   
             }
             Some(old_index) => {
                 self.expiring_vec[*old_index]
                     .remove(obj_id)
                     .then_some(())
                     .unwrap();
-                self.insert(obj_id.clone(), lease);
+                if lease != 0 {
+                    self.insert(obj_id.clone(), lease);
+                }
                 AccessResult::Hit
             }
         }
