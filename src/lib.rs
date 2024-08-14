@@ -43,6 +43,9 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     }
 
     pub fn insert(&mut self, obj_id: Obj, lease: usize) {
+        if lease == 0 {
+            return;
+        }
         let absolute_index = (self.curr_expiring_index + lease) % MAX_EXPIRING_VEC_SIZE;
         self.expiring_vec[absolute_index].insert(obj_id.clone());
         self.content_map.insert(obj_id, absolute_index);
