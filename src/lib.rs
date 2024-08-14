@@ -108,7 +108,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         });
         self.expiring_vec[self.curr_expiring_index].clear();
         // self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
-        
+
         return expiring_copy;
     }
 
@@ -224,7 +224,10 @@ mod test {
         assert!(lease_cache.content_map.keys().len() == 1);
         // Get the old absolute index and assert it no longer contains obj_id 1
         // let abs_index_old = abs_index; // Reuse the old index
-        println!("results {}", lease_cache.expiring_vec[abs_index].contains(&1));
+        println!(
+            "results {}",
+            lease_cache.expiring_vec[abs_index].contains(&1)
+        );
         assert!(!lease_cache.expiring_vec[abs_index].contains(&1));
         assert!(lease_cache.content_map.keys().len() == 1);
         // Get the new absolute index and assert it contains obj_id 1
