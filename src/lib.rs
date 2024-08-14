@@ -49,6 +49,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     }
 
     pub fn update(&mut self, obj_id: &Obj, lease: usize) -> AccessResult {
+        self.dump_expiring();
         let old_index = self.content_map.get(obj_id);
         match old_index {
             None => {
@@ -96,12 +97,18 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     }
 
     pub fn dump_expiring(&mut self) -> HashSet<Obj> {
-        let mut expiring = self.expiring_vec[self.curr_expiring_index].clone();
+        self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
+        let expiring = self.expiring_vec[self.curr_expiring_index].clone();
         let expiring_copy = expiring.clone();
         //decrement the cache consumption when expiring
         self.cache_consumption -= expiring.len();
-        expiring.clear();
-        self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
+        //removing expiring from content map
+        expiring.iter().for_each(|obj_id| {
+            self.content_map.remove(obj_id);
+        });
+        self.expiring_vec[self.curr_expiring_index].clear();
+        // self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
+        
         return expiring_copy;
     }
 
@@ -163,6 +170,23 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_time_till_eviction() {
+        let mut lease_cache = LeaseCache::<usize>::new();
+        lease_cache.insert(1, 1);
+        lease_cache.insert(2, 2);
+        lease_cache.insert(3, 3);
+        lease_cache.cache_consumption = 3;
+        assert_eq!(lease_cache.get_time_till_eviction(&1), Some(1));
+        assert_eq!(lease_cache.get_time_till_eviction(&2), Some(2));
+        assert_eq!(lease_cache.get_time_till_eviction(&3), Some(3));
+        lease_cache.dump_expiring();
+
+        println!("{:?}", lease_cache.get_time_till_eviction(&1));
+        assert_eq!(lease_cache.get_time_till_eviction(&2), Some(1));
+        assert_eq!(lease_cache.get_time_till_eviction(&3), Some(2));
+    }
+
+    #[test]
     fn test_lease_cache_new() {
         let lease_cache = LeaseCache::<usize>::new();
         assert_eq!(lease_cache.expiring_vec.len(), self::MAX_EXPIRING_VEC_SIZE);
@@ -199,8 +223,9 @@ mod test {
         lease_cache.update(&1, 4);
         assert!(lease_cache.content_map.keys().len() == 1);
         // Get the old absolute index and assert it no longer contains obj_id 1
-        let abs_index_old = abs_index; // Reuse the old index
-        assert!(!lease_cache.expiring_vec[abs_index_old].contains(&1));
+        // let abs_index_old = abs_index; // Reuse the old index
+        println!("results {}", lease_cache.expiring_vec[abs_index].contains(&1));
+        assert!(!lease_cache.expiring_vec[abs_index].contains(&1));
         assert!(lease_cache.content_map.keys().len() == 1);
         // Get the new absolute index and assert it contains obj_id 1
         let abs_index_new = *lease_cache.content_map.get(&1).unwrap();
@@ -218,8 +243,6 @@ mod test {
         lease_cache.insert(3, 3);
         lease_cache.cache_consumption = 3;
         let mut expiring = lease_cache.dump_expiring();
-        assert_eq!(expiring, HashSet::new());
-        expiring = lease_cache.dump_expiring();
         let mut expected = HashSet::new();
         expected.insert(1);
         assert_eq!(expiring, expected);
@@ -227,11 +250,14 @@ mod test {
         expected.insert(2);
         expected.remove(&1);
         assert_eq!(expiring, expected);
+        assert!(!lease_cache.content_map.contains_key(&1));
         expiring = lease_cache.dump_expiring();
         expected.insert(3);
         expected.remove(&2);
         assert_eq!(expiring, expected);
+        assert!(!lease_cache.content_map.contains_key(&2));
         assert_eq!(lease_cache.cache_consumption, 0);
+        assert!(lease_cache.content_map.is_empty())
 
         //TODO: test that expiring index is incremented correctly at the boundry
     }
