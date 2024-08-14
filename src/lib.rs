@@ -161,6 +161,7 @@ impl<Obj: ObjIdTraits> CacheSim<TaggedObjectId<usize, Obj>> for LeaseCache<Obj> 
 
 mod test {
     use super::*;
+
     #[test]
     fn test_lease_cache_new() {
         let lease_cache = LeaseCache::<usize>::new();
@@ -196,9 +197,11 @@ mod test {
         assert!(lease_cache.expiring_vec[abs_index].contains(&1));
         // Update the lease cache with obj_id 1 and new index 4
         lease_cache.update(&1, 4);
+        assert!(lease_cache.content_map.keys().len() == 1);
         // Get the old absolute index and assert it no longer contains obj_id 1
         let abs_index_old = abs_index; // Reuse the old index
         assert!(!lease_cache.expiring_vec[abs_index_old].contains(&1));
+        assert!(lease_cache.content_map.keys().len() == 1);
         // Get the new absolute index and assert it contains obj_id 1
         let abs_index_new = *lease_cache.content_map.get(&1).unwrap();
         assert!(lease_cache.expiring_vec[abs_index_new].contains(&1));
