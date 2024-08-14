@@ -52,17 +52,14 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         self.dump_expiring();
         let old_index = self.content_map.get(obj_id);
         match old_index {
-            None => {
-                match lease {
-                    0 => AccessResult::Miss,
-                    _ => {
-                        self.insert(obj_id.clone(), lease);
-                        self.cache_consumption += 1;
-                        AccessResult::Miss
-                    }
-                    
-                }   
-            }
+            None => match lease {
+                0 => AccessResult::Miss,
+                _ => {
+                    self.insert(obj_id.clone(), lease);
+                    self.cache_consumption += 1;
+                    AccessResult::Miss
+                }
+            },
             Some(old_index) => {
                 self.expiring_vec[*old_index]
                     .remove(obj_id)
