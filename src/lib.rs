@@ -150,7 +150,6 @@ impl<Obj: ObjIdTraits> CacheSim<TaggedObjectId<usize, Obj>> for LeaseCache<Obj> 
     fn cache_access(&mut self, access: TaggedObjectId<usize, Obj>) -> abstract_cache::AccessResult {
         let TaggedObjectId(lease, obj_id) = access;
         let cache_result = self.update(&obj_id, lease);
-        self.dump_expiring();
         if self.cache_consumption > self.cache_size.unwrap() {
             self.force_evict();
             self.cache_consumption -= 1;
