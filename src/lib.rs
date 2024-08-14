@@ -111,7 +111,6 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         //decrement the cache consumption when expiring
         self.cache_consumption -= expiring.len();
         //removing expiring from content map
-        println!("expiring: {:?}", expiring);
         expiring.iter().for_each(|obj_id| {
             println!("removing obj_id: {:?}", obj_id);
             self.content_map.remove(obj_id);
@@ -193,6 +192,16 @@ mod test {
         println!("{:?}", lease_cache.get_time_till_eviction(&1));
         assert_eq!(lease_cache.get_time_till_eviction(&2), Some(1));
         assert_eq!(lease_cache.get_time_till_eviction(&3), Some(2));
+    }
+
+    #[test]
+    fn test_lease_zero() {
+        let mut lease_cache = LeaseCache::<usize>::new();
+        lease_cache.update(&1, 2);
+        lease_cache.update(&2, 0);
+        assert_eq!(lease_cache.get_time_till_eviction(&1), Some(1));
+        assert_eq!(lease_cache.get_time_till_eviction(&2), None);
+        assert!(!lease_cache.content_map.contains_key(&2));
     }
 
     #[test]
