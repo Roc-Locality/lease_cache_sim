@@ -103,6 +103,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         //decrement the cache consumption when expiring
         self.cache_consumption -= expiring.len();
         //removing expiring from content map
+        println!("expiring: {:?}", expiring);
         expiring.iter().for_each(|obj_id| {
             println!("removing obj_id: {:?}", obj_id);
             self.content_map.remove(obj_id);
