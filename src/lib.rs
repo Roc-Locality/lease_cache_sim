@@ -104,6 +104,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         self.cache_consumption -= expiring.len();
         //removing expiring from content map
         expiring.iter().for_each(|obj_id| {
+            println!("removing obj_id: {:?}", obj_id);
             self.content_map.remove(obj_id);
         });
         self.expiring_vec[self.curr_expiring_index].clear();
