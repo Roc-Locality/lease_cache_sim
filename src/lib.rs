@@ -81,7 +81,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         let index = self.content_map.get(obj_id);
         println!("looking for time to evict for objId: {:?}", obj_id);
         match index {
-            None => None,
+            None => {println!("found none time to evicrt"); None},
             Some(index) => {
                 let curr_index = self.curr_expiring_index;
                 if *index > curr_index {
