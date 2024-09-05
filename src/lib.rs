@@ -79,6 +79,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
 
     pub fn get_time_till_eviction(&self, obj_id: &Obj) -> Option<usize> {
         let index = self.content_map.get(obj_id);
+        println!("looking for time to evict for objId: {:?}", obj_id);
         match index {
             None => None,
             Some(index) => {
