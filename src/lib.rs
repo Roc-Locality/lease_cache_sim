@@ -80,7 +80,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     pub fn get_time_till_eviction(&self, obj_id: &Obj) -> Option<usize> {
         let index = self.content_map.get(obj_id);
         match index {
-            None => {None},
+            None => None,
             Some(index) => {
                 let curr_index = self.curr_expiring_index;
                 if *index > curr_index {
