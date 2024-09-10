@@ -99,6 +99,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         let index = self.content_map.get(obj_id).unwrap();
         self.expiring_vec[*index].remove(obj_id);
         self.content_map.remove(obj_id);
+        self.cache_consumption -= 1;
     }
 
     pub fn dump_expiring(&mut self) -> HashSet<Obj> {
@@ -368,5 +369,23 @@ mod test {
             num_obj3_evicted as f64 / num_iters as f64
         );
         assert!(check_obj1 && check_obj2 && check_obj3);
+    }
+
+    #[test]
+    fn test_remove_from_cache() {
+        let mut lease_cache = LeaseCache::<usize>::new();
+        lease_cache.insert(1, 1);
+        lease_cache.insert(2, 2);
+        lease_cache.insert(3, 3);
+        lease_cache.cache_consumption = 3;
+        lease_cache.remove_from_cache(&1);
+        assert!(!lease_cache.content_map.contains_key(&1));
+        assert_eq!(lease_cache.cache_consumption, 2);
+        lease_cache.remove_from_cache(&2);
+        assert!(!lease_cache.content_map.contains_key(&2));
+        assert_eq!(lease_cache.cache_consumption, 1);
+        lease_cache.remove_from_cache(&3);
+        assert!(!lease_cache.content_map.contains_key(&3));
+        assert_eq!(lease_cache.cache_consumption, 0);
     }
 }
