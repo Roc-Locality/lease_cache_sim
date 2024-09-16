@@ -110,7 +110,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         self.current_time += 1;
         if let Some(expiring_objects) = self.expiring_map.remove(&self.current_time) {
             for obj_id in &expiring_objects {
-                self.content_map.remove(&obj_id);
+                self.content_map.remove(obj_id);
             }
             expiring_objects
         } else {
@@ -121,7 +121,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     pub fn force_evict(&mut self) -> Obj {
         let keys: Vec<Obj> = self.content_map.keys().cloned().collect();
         if let Some(obj_id) = keys.choose(&mut rand::thread_rng()) {
-            let expiration = self.content_map.get(obj_id).unwrap().clone();
+            let expiration = *self.content_map.get(obj_id).unwrap();
             self.remove_from_expiring_map(expiration, obj_id);
             self.content_map.remove(obj_id);
             obj_id.clone()
