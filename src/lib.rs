@@ -130,7 +130,6 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         }
     }
 
-
     //Helper Methods
     fn remove_from_expiring_map(&mut self, expiration: usize, obj_id: &Obj) {
         if let Some(set) = self.expiring_map.get_mut(&expiration) {
@@ -140,7 +139,6 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
             }
         }
     }
-
 
     // Utility functions
     pub fn contains(&self, obj_id: &Obj) -> bool {
