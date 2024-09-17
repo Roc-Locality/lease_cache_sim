@@ -130,6 +130,10 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         }
     }
 
+    pub fn get_cache_consumption(&self) -> usize {
+        self.content_map.len()
+    }
+
     //Helper Methods
     fn remove_from_expiring_map(&mut self, expiration: usize, obj_id: &Obj) {
         if let Some(set) = self.expiring_map.get_mut(&expiration) {
