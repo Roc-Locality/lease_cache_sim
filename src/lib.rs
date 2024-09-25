@@ -3,7 +3,7 @@
 use abstract_cache::AccessResult;
 use abstract_cache::CacheSim;
 use abstract_cache::ObjIdTraits;
-use rand::seq::SliceRandom;
+use rand::seq::IteratorRandom;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
@@ -19,140 +19,128 @@ impl<Tag: ObjIdTraits, Obj: ObjIdTraits> Display for TaggedObjectId<Tag, Obj> {
 
 impl<Tag: ObjIdTraits, Obj: ObjIdTraits> ObjIdTraits for TaggedObjectId<Tag, Obj> {}
 
-/// A `LeaseCache` is a cache that associates objects with expiration times.
-///
-/// The cache maintains two main data structures:
-/// - `expiring_map`: A `HashMap` that maps expiration times to sets of objects.
-/// - `content_map`: A `HashMap` that maps objects to their expiration times.
-///
-/// The cache supports the following operations:
-/// - `insert`: Adds an object to the cache with a specified lease (expiration time).
-/// - `update`: Updates the lease of an existing object or inserts a new object if it doesn't exist.
-/// - `contains`: Checks if an object is in the cache.
-/// - `time_until_eviction`: Returns the time until an object is evicted from the cache.
-/// - `remove`: Removes an object from the cache.
-/// - `advance_time`: Advances the current time and evicts expired objects.
-/// - `force_evict`: Randomly evicts an object from the cache.
-///
-/// The cache can also be configured with a maximum capacity, and it will evict objects to maintain this capacity.
-///
-/// # Type Parameters
-/// - `Obj`: The type of objects stored in the cache. Must implement `ObjIdTraits`.
-///
-/// # Examples
-///
-/// ```
-/// use lease_cache_sim::LeaseCache;
-/// let mut lease_cache = LeaseCache::<usize>::new();
-/// lease_cache.insert(1, 10);
-/// assert!(lease_cache.contains(&1));
-/// ```
+pub const MAX_EXPIRING_VEC_SIZE: usize = 10000000;
 #[derive(Clone)]
 pub struct LeaseCache<Obj: ObjIdTraits> {
     //map from ref to (short_lease, long_lease, short_lease_prob)
     // pub(crate) lease_table: HashMap<Tag, (usize, usize, f64)>,
-    expiring_map: HashMap<usize, HashSet<Obj>>,
-    current_time: usize,
-    content_map: HashMap<Obj, usize>, //map from ObjId to index in expiring_vec
-    capacity: Option<usize>,
-    // pub(crate) curr_expiring_index: usize,
-    // pub(crate) cache_consumption: usize,
+    pub(crate) expiring_vec: Vec<HashSet<Obj>>,
+    pub(crate) current_time: usize,
+    //map from ObjId to index in expiring_vec
+    pub(crate) content_map: HashMap<Obj, usize>,
+    pub(crate) cache_consumption: usize,
+    pub(crate) cache_size: Option<usize>,
 }
 impl<Obj: ObjIdTraits> LeaseCache<Obj> {
     pub fn new() -> Self {
         LeaseCache {
-            expiring_map: HashMap::new(),
+            expiring_vec: vec![HashSet::new(); MAX_EXPIRING_VEC_SIZE],
             current_time: 0,
             content_map: HashMap::new(),
-            capacity: None,
+            cache_consumption: 0,
+            cache_size: None,
         }
     }
 
     pub fn insert(&mut self, obj_id: Obj, lease: usize) {
-        let expiration = self.current_time + lease;
-        self.expiring_map
-            .entry(expiration)
-            .or_default()
-            .insert(obj_id.clone());
-        self.content_map.insert(obj_id, expiration);
+        let absolute_index = (self.current_time + lease) % MAX_EXPIRING_VEC_SIZE;
+        self.expiring_vec[absolute_index].insert(obj_id.clone());
+        self.content_map.insert(obj_id, absolute_index);
     }
 
     pub fn update(&mut self, obj_id: &Obj, lease: usize) -> AccessResult {
         self.advance_time();
-        match self.content_map.get(obj_id) {
-            Some(&old_expiration) => {
-                self.remove_from_expiring_map(old_expiration, obj_id);
-                if lease > 0 {
+        let old_index = self.content_map.get(obj_id);
+        match old_index {
+            None => match lease {
+                0 => AccessResult::Miss,
+                _ => {
                     self.insert(obj_id.clone(), lease);
-                } else {
-                    self.content_map.remove(obj_id);
+                    self.cache_consumption += 1;
+                    AccessResult::Miss
                 }
-
+            },
+            Some(old_index) => {
+                self.expiring_vec[*old_index]
+                    .remove(obj_id)
+                    .then_some(())
+                    .unwrap();
+                if lease != 0 {
+                    self.insert(obj_id.clone(), lease);
+                }
                 AccessResult::Hit
             }
-            None => {
-                if lease > 0 {
-                    self.insert(obj_id.clone(), lease);
-                }
-                AccessResult::Miss
-            }
         }
     }
 
-    pub fn remove(&mut self, obj_id: &Obj) {
-        if let Some(&expiration) = self.content_map.get(obj_id) {
-            self.remove_from_expiring_map(expiration, obj_id);
-            self.content_map.remove(obj_id);
-        }
-    }
-
-    pub fn advance_time(&mut self) -> HashSet<Obj> {
-        self.current_time += 1;
-        if let Some(expiring_objects) = self.expiring_map.remove(&self.current_time) {
-            for obj_id in &expiring_objects {
-                self.content_map.remove(obj_id);
-            }
-            expiring_objects
-        } else {
-            HashSet::new()
-        }
-    }
-
-    pub fn force_evict(&mut self) -> Obj {
-        let keys: Vec<Obj> = self.content_map.keys().cloned().collect();
-        if let Some(obj_id) = keys.choose(&mut rand::thread_rng()) {
-            let expiration = *self.content_map.get(obj_id).unwrap();
-            self.remove_from_expiring_map(expiration, obj_id);
-            self.content_map.remove(obj_id);
-            obj_id.clone()
-        } else {
-            panic!("Cache is empty; cannot evict.");
-        }
-    }
-
-    pub fn get_cache_consumption(&self) -> usize {
-        self.content_map.len()
-    }
-
-    //Helper Methods
-    fn remove_from_expiring_map(&mut self, expiration: usize, obj_id: &Obj) {
-        if let Some(set) = self.expiring_map.get_mut(&expiration) {
-            set.remove(obj_id);
-            if set.is_empty() {
-                self.expiring_map.remove(&expiration);
-            }
-        }
-    }
-
-    // Utility functions
     pub fn contains(&self, obj_id: &Obj) -> bool {
         self.content_map.contains_key(obj_id)
     }
 
-    pub fn time_until_eviction(&self, obj_id: &Obj) -> Option<usize> {
-        self.content_map
-            .get(obj_id)
-            .map(|&expiration| expiration.saturating_sub(self.current_time))
+    pub fn time_till_eviction(&self, obj_id: &Obj) -> Option<usize> {
+        let index = self.content_map.get(obj_id);
+        match index {
+            None => None,
+            Some(index) => {
+                let curr_index = self.current_time;
+                if *index > curr_index {
+                    return Some(*index - curr_index);
+                }
+                return Some(MAX_EXPIRING_VEC_SIZE - curr_index + *index);
+            }
+        }
+    }
+
+    pub fn get_cache_consumption(&self) -> usize {
+        self.cache_consumption
+    }
+
+    pub fn remove(&mut self, obj_id: &Obj) {
+        let index = self.content_map.get(obj_id).unwrap();
+        self.expiring_vec[*index].remove(obj_id);
+        self.content_map.remove(obj_id);
+        self.cache_consumption -= 1;
+    }
+
+    pub fn advance_time(&mut self) -> HashSet<Obj> {
+        self.current_time = (self.current_time + 1) % MAX_EXPIRING_VEC_SIZE;
+        let expiring = self.expiring_vec[self.current_time].clone();
+        let expiring_copy = expiring.clone();
+        //decrement the cache consumption when expiring
+        self.cache_consumption -= expiring.len();
+        //removing expiring from content map
+        expiring.iter().for_each(|obj_id| {
+            self.content_map.remove(obj_id);
+        });
+        self.expiring_vec[self.current_time].clear();
+        // self.curr_expiring_index = (self.curr_expiring_index + 1) % MAX_EXPIRING_VEC_SIZE;
+
+        return expiring_copy;
+    }
+
+    pub fn remove_random_element<K, V>(map: &mut HashMap<K, V>) -> Option<(K, V)>
+    where
+        K: std::hash::Hash + Eq + Clone,
+        V: Clone,
+    {
+        if let Some((key, val)) = map.clone().iter().choose(&mut rand::thread_rng()) {
+            map.remove(key);
+            return Some((key.clone(), val.clone()));
+        }
+        None
+    }
+
+    pub fn force_evict(&mut self) -> Obj {
+        // println!("content map before {:?}", self.content_map);
+
+        let (obj_id, absolute_index) =
+            LeaseCache::<Obj>::remove_random_element(&mut self.content_map).unwrap();
+
+        self.expiring_vec[absolute_index]
+            .remove(&obj_id.clone())
+            .then_some(())
+            .unwrap();
+        obj_id
     }
 }
 
@@ -165,19 +153,18 @@ impl<Obj: ObjIdTraits> Default for LeaseCache<Obj> {
 impl<Obj: ObjIdTraits> CacheSim<TaggedObjectId<usize, Obj>> for LeaseCache<Obj> {
     /// returns (total_access_count, miss_count)
     /// input is an iterator of TaggedObjectId<Lease, ObjId>
-    fn cache_access(&mut self, access: TaggedObjectId<usize, Obj>) -> AccessResult {
+    fn cache_access(&mut self, access: TaggedObjectId<usize, Obj>) -> abstract_cache::AccessResult {
         let TaggedObjectId(lease, obj_id) = access;
-        let result = self.update(&obj_id, lease);
-        if let Some(max_capacity) = self.capacity {
-            while self.content_map.len() > max_capacity {
-                self.force_evict();
-            }
+        let cache_result = self.update(&obj_id, lease);
+        if self.cache_consumption > self.cache_size.unwrap() {
+            self.force_evict();
+            self.cache_consumption -= 1;
         }
-        return result;
+        return cache_result;
     }
 
-    fn set_capacity(&mut self, capacity: usize) -> &mut Self {
-        self.capacity = Some(capacity);
+    fn set_capacity(&mut self, cache_size: usize) -> &mut Self {
+        self.cache_size = Some(cache_size);
         self
     }
 }
@@ -193,14 +180,15 @@ mod test {
         lease_cache.insert(1, 1);
         lease_cache.insert(2, 2);
         lease_cache.insert(3, 3);
-        assert_eq!(lease_cache.time_until_eviction(&1), Some(1));
-        assert_eq!(lease_cache.time_until_eviction(&2), Some(2));
-        assert_eq!(lease_cache.time_until_eviction(&3), Some(3));
+        lease_cache.cache_consumption = 3;
+        assert_eq!(lease_cache.time_till_eviction(&1), Some(1));
+        assert_eq!(lease_cache.time_till_eviction(&2), Some(2));
+        assert_eq!(lease_cache.time_till_eviction(&3), Some(3));
         lease_cache.advance_time();
 
-        println!("{:?}", lease_cache.time_until_eviction(&1));
-        assert_eq!(lease_cache.time_until_eviction(&2), Some(1));
-        assert_eq!(lease_cache.time_until_eviction(&3), Some(2));
+        println!("{:?}", lease_cache.time_till_eviction(&1));
+        assert_eq!(lease_cache.time_till_eviction(&2), Some(1));
+        assert_eq!(lease_cache.time_till_eviction(&3), Some(2));
     }
 
     #[test]
@@ -208,9 +196,17 @@ mod test {
         let mut lease_cache = LeaseCache::<usize>::new();
         lease_cache.update(&1, 2);
         lease_cache.update(&2, 0);
-        assert_eq!(lease_cache.time_until_eviction(&1), Some(1));
-        assert_eq!(lease_cache.time_until_eviction(&2), None);
+        assert_eq!(lease_cache.time_till_eviction(&1), Some(1));
+        assert_eq!(lease_cache.time_till_eviction(&2), None);
         assert!(!lease_cache.content_map.contains_key(&2));
+    }
+
+    #[test]
+    fn test_lease_cache_new() {
+        let lease_cache = LeaseCache::<usize>::new();
+        assert_eq!(lease_cache.expiring_vec.len(), self::MAX_EXPIRING_VEC_SIZE);
+        assert_eq!(lease_cache.current_time, 0);
+        assert_eq!(lease_cache.content_map.len(), 0);
     }
 
     #[test]
@@ -222,12 +218,12 @@ mod test {
         assert!(lease_cache.content_map.contains_key(&1));
         assert!(lease_cache.content_map.contains_key(&2));
         assert!(lease_cache.content_map.contains_key(&3));
-        let abs_index = lease_cache.content_map.get(&1).unwrap();
-        assert!(lease_cache
-            .expiring_map
-            .get(abs_index)
-            .unwrap()
-            .contains(&1));
+        let mut abs_index = lease_cache.content_map.get(&1).unwrap();
+        assert_eq!(lease_cache.expiring_vec[*abs_index].contains(&1), true);
+        abs_index = lease_cache.content_map.get(&2).unwrap();
+        assert_eq!(lease_cache.expiring_vec[*abs_index].contains(&2), true);
+        abs_index = lease_cache.content_map.get(&3).unwrap();
+        assert_eq!(lease_cache.expiring_vec[*abs_index].contains(&3), true);
     }
 
     #[test]
@@ -235,29 +231,23 @@ mod test {
         let mut lease_cache = LeaseCache::<usize>::new();
         // Update the lease cache with obj_id 1 and index 1
         lease_cache.update(&1, 1);
-        // Get the absolute index of obj_id 1
+        // Get the absolute index of obj_id 1 and release the immutable borrow
         let abs_index: usize = *lease_cache.content_map.get(&1).unwrap();
-        assert!(lease_cache
-            .expiring_map
-            .get(&abs_index)
-            .unwrap()
-            .contains(&1));
+        assert!(lease_cache.expiring_vec[abs_index].contains(&1));
         // Update the lease cache with obj_id 1 and new index 4
         lease_cache.update(&1, 4);
-        assert_eq!(lease_cache.content_map.len(), 1);
-        // Old index should no longer contain obj_id 1
-        assert!(lease_cache
-            .expiring_map
-            .get(&abs_index)
-            .unwrap_or(&HashSet::new())
-            .is_empty());
-        // New index should contain obj_id 1
+        assert!(lease_cache.content_map.keys().len() == 1);
+        // Get the old absolute index and assert it no longer contains obj_id 1
+        // let abs_index_old = abs_index; // Reuse the old index
+        println!(
+            "results {}",
+            lease_cache.expiring_vec[abs_index].contains(&1)
+        );
+        assert!(!lease_cache.expiring_vec[abs_index].contains(&1));
+        assert!(lease_cache.content_map.keys().len() == 1);
+        // Get the new absolute index and assert it contains obj_id 1
         let abs_index_new = *lease_cache.content_map.get(&1).unwrap();
-        assert!(lease_cache
-            .expiring_map
-            .get(&abs_index_new)
-            .unwrap()
-            .contains(&1));
+        assert!(lease_cache.expiring_vec[abs_index_new].contains(&1));
     }
 
     #[test]
@@ -269,6 +259,7 @@ mod test {
         lease_cache.insert(1, 1);
         lease_cache.insert(2, 2);
         lease_cache.insert(3, 3);
+        lease_cache.cache_consumption = 3;
         let mut expiring = lease_cache.advance_time();
         let mut expected = HashSet::new();
         expected.insert(1);
@@ -283,7 +274,7 @@ mod test {
         expected.remove(&2);
         assert_eq!(expiring, expected);
         assert!(!lease_cache.content_map.contains_key(&2));
-        assert_eq!(lease_cache.content_map.len(), 0);
+        assert_eq!(lease_cache.cache_consumption, 0);
         assert!(lease_cache.content_map.is_empty())
 
         //TODO: test that expiring index is incremented correctly at the boundry
@@ -335,32 +326,49 @@ mod test {
     #[test]
     fn test_lease_cache_force_evict_string() {
         let epsilon = 0.1;
-        let num_iters = 1000;
+        let num_iters = 100;
         //we want to test that each object in the cache has an equal chance of being evicted
-        let mut eviction_counts = HashMap::new();
+        let mut num_obj1_evicted = 0;
+        let mut num_obj2_evicted = 0;
+        let mut num_obj3_evicted = 0;
         let obj_1 = "x1";
         let obj_2 = "x2";
         let obj_3 = "x3";
-        for _ in 0..num_iters {
+        for _i in 0..num_iters {
             let mut lease_cache = LeaseCache::<String>::new();
-            lease_cache.insert(obj_1.to_string(), 100000);
-            lease_cache.insert(obj_2.to_string(), 100000);
+            lease_cache.insert(obj_1.to_string(), 100);
+            lease_cache.insert(obj_2.to_string(), 100);
             lease_cache.insert(obj_3.to_string(), 9);
             let evicted_obj = lease_cache.force_evict();
-            *eviction_counts.entry(evicted_obj).or_insert(0) += 1;
+            // println!("evicted: {evicted_obj}");
+            match evicted_obj.as_str() {
+                o if o == obj_1 => num_obj1_evicted += 1,
+                o if o == obj_2 => num_obj2_evicted += 1,
+                o if o == obj_3 => num_obj3_evicted += 1,
+                _ => panic!("Invalid object evicted"),
+            }
+            // if _i % 10 == 1 {
+            //     println!("{} ", _i)
+            // }
         }
-        // Check that each object was evicted within a small epsilon
-        let expected_ratio = 1.0 / 3.0;
-        for count in eviction_counts.values() {
-            let ratio = *count as f64 / num_iters as f64;
-            println!("Eviction ratio: {}", ratio);
-            assert!(
-                (ratio - expected_ratio).abs() < epsilon,
-                "Eviction ratio {} differs from expected {}",
-                ratio,
-                expected_ratio
-            );
-        }
+        //check that each object was evicted is within a small epsilon
+        let check_obj1 =
+            ((num_obj1_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        let check_obj2 =
+            ((num_obj2_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        let check_obj3 =
+            ((num_obj3_evicted as f64 / num_iters as f64) - (1.0 / 3.0)).abs() < epsilon;
+        println!(
+            "eviction count: {} {} {}",
+            num_obj1_evicted, num_obj2_evicted, num_obj3_evicted
+        );
+        println!(
+            "eviction ratio: {} {} {}",
+            num_obj1_evicted as f64 / num_iters as f64,
+            num_obj2_evicted as f64 / num_iters as f64,
+            num_obj3_evicted as f64 / num_iters as f64
+        );
+        assert!(check_obj1 && check_obj2 && check_obj3);
     }
 
     #[test]
@@ -369,14 +377,16 @@ mod test {
         lease_cache.insert(1, 1);
         lease_cache.insert(2, 2);
         lease_cache.insert(3, 3);
+        lease_cache.cache_consumption = 3;
         lease_cache.remove(&1);
         assert!(!lease_cache.content_map.contains_key(&1));
-        assert_eq!(lease_cache.content_map.len(), 2);
+        assert_eq!(lease_cache.cache_consumption, 2);
         lease_cache.remove(&2);
         assert!(!lease_cache.content_map.contains_key(&2));
-        assert_eq!(lease_cache.content_map.len(), 1);
+        assert_eq!(lease_cache.cache_consumption, 1);
         lease_cache.remove(&3);
         assert!(!lease_cache.content_map.contains_key(&3));
-        assert_eq!(lease_cache.content_map.len(), 0);
+        assert_eq!(lease_cache.cache_consumption, 0);
     }
 }
+
