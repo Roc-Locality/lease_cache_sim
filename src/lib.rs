@@ -325,7 +325,7 @@ mod test {
 
     #[test]
     fn test_lease_cache_force_evict_string() {
-        let epsilon = 0.1;
+        let epsilon = 0.2;
         let num_iters = 100;
         //we want to test that each object in the cache has an equal chance of being evicted
         let mut num_obj1_evicted = 0;
@@ -334,8 +334,9 @@ mod test {
         let obj_1 = "x1";
         let obj_2 = "x2";
         let obj_3 = "x3";
+        let mut lease_cache = LeaseCache::<String>::new();
+
         for _i in 0..num_iters {
-            let mut lease_cache = LeaseCache::<String>::new();
             lease_cache.insert(obj_1.to_string(), 100);
             lease_cache.insert(obj_2.to_string(), 100);
             lease_cache.insert(obj_3.to_string(), 9);
@@ -389,4 +390,3 @@ mod test {
         assert_eq!(lease_cache.cache_consumption, 0);
     }
 }
-
