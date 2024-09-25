@@ -77,7 +77,7 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
         self.content_map.contains_key(obj_id)
     }
 
-    pub fn time_till_eviction(&self, obj_id: &Obj) -> Option<usize> {
+    pub fn time_until_eviction(&self, obj_id: &Obj) -> Option<usize> {
         let index = self.content_map.get(obj_id);
         match index {
             None => None,
@@ -181,14 +181,14 @@ mod test {
         lease_cache.insert(2, 2);
         lease_cache.insert(3, 3);
         lease_cache.cache_consumption = 3;
-        assert_eq!(lease_cache.time_till_eviction(&1), Some(1));
-        assert_eq!(lease_cache.time_till_eviction(&2), Some(2));
-        assert_eq!(lease_cache.time_till_eviction(&3), Some(3));
+        assert_eq!(lease_cache.time_until_eviction(&1), Some(1));
+        assert_eq!(lease_cache.time_until_eviction(&2), Some(2));
+        assert_eq!(lease_cache.time_until_eviction(&3), Some(3));
         lease_cache.advance_time();
 
-        println!("{:?}", lease_cache.time_till_eviction(&1));
-        assert_eq!(lease_cache.time_till_eviction(&2), Some(1));
-        assert_eq!(lease_cache.time_till_eviction(&3), Some(2));
+        println!("{:?}", lease_cache.time_until_eviction(&1));
+        assert_eq!(lease_cache.time_until_eviction(&2), Some(1));
+        assert_eq!(lease_cache.time_until_eviction(&3), Some(2));
     }
 
     #[test]
@@ -196,8 +196,8 @@ mod test {
         let mut lease_cache = LeaseCache::<usize>::new();
         lease_cache.update(&1, 2);
         lease_cache.update(&2, 0);
-        assert_eq!(lease_cache.time_till_eviction(&1), Some(1));
-        assert_eq!(lease_cache.time_till_eviction(&2), None);
+        assert_eq!(lease_cache.time_until_eviction(&1), Some(1));
+        assert_eq!(lease_cache.time_until_eviction(&2), None);
         assert!(!lease_cache.content_map.contains_key(&2));
     }
 
