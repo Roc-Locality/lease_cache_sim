@@ -68,6 +68,8 @@ impl<Obj: ObjIdTraits> LeaseCache<Obj> {
                     // .unwrap();
                 if lease != 0 {
                     self.insert(obj_id.clone(), lease);
+                } else {
+                    self.content_map.remove(obj_id);
                 }
                 // self.current_time = (self.current_time + 1) % MAX_EXPIRING_VEC_SIZE;
                 AccessResult::Hit
@@ -200,11 +202,14 @@ mod test {
     #[test]
     fn test_lease_zero() {
         let mut lease_cache = LeaseCache::<usize>::new();
-        lease_cache.update(&1, 2);
+        lease_cache.update(&1, 4);
         lease_cache.update(&2, 0);
-        assert_eq!(lease_cache.time_until_eviction(&1), Some(1));
+        lease_cache.update(&1, 0);
+        assert_eq!(lease_cache.time_until_eviction(&1), None);
         assert_eq!(lease_cache.time_until_eviction(&2), None);
         assert!(!lease_cache.content_map.contains_key(&2));
+        assert!(!lease_cache.content_map.contains_key(&1));
+        assert!(lease_cache.get_cache_consumption() == 0);
     }
 
     #[test]
@@ -424,6 +429,16 @@ mod test {
         assert_eq!(lease_cache.contains(&obj_id), false);
 
     }
+
+    // #[test]
+    // fn test_lease_zero() {
+    //     let mut lease_cache = LeaseCache::<usize>::new();
+    //     lease_cache.update(&1, 2);
+    //     lease_cache.update(&2, 0);
+    //     assert_eq!(lease_cache.time_until_eviction(&1), Some(1));
+    //     assert_eq!(lease_cache.time_until_eviction(&2), None);
+    //     assert!(!lease_cache.content_map.contains_key(&2));
+    // }
 
     #[test]
     fn test_wrap_around_lease_one() {
